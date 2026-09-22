@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Open Dental Appointments</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css">
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f7f9; color: #222; }
+    h1 { font-size: 22px; margin-bottom: 16px; }
+    .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .filters { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+    .filters label { display: flex; flex-direction: column; font-size: 13px; gap: 4px; }
+    .filters input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; }
+    button { padding: 7px 16px; background: #155a7c; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #0f4560; }
+    #status { font-size: 13px; color: #666; margin-left: 8px; }
+    #status.error { color: #c0392b; }
+    table.dataTable td { font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <h1>Open Dental – Appointments</h1>
+
+  <div class="card">
+    <div class="filters">
+      <label>From
+        <input type="date" id="dateStart">
+      </label>
+      <label>To
+        <input type="date" id="dateEnd">
+      </label>
+      <button id="loadBtn">Load</button>
+      <span id="status"></span>
+    </div>
+
+    <table id="apptTable" class="display" style="width:100%">
+      <thead>
+        <tr>
+          <th>Apt #</th>
+          <th>Pat #</th>
+          <th>Date / Time</th>
+          <th>Status</th>
+          <th>Procedures</th>
+          <th>Op</th>
+          <th>Prov</th>
+          <th>New Patient</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+
+  <script>
+    let table;
+
+    function apiUrl() {
+      const params = new URLSearchParams();
+      const s = $('#dateStart').val();
+      const e = $('#dateEnd').val();
+      if (s) params.append('dateStart', s);
+      if (e) params.append('dateEnd', e);
+      return 'api.php' + (params.toString() ? '?' + params.toString() : '');
+    }
+
+    function loadTable() {
+      $('#status').removeClass('error').text('Loading from Open Dental…');
+
+      if (table) {
+        table.ajax.url(apiUrl()).load(done);
+        return;
+      }
+
+      table = new DataTable('#apptTable', {
+        ajax: {
+          url: apiUrl(),
+          dataSrc: 'data',
+          error: function (xhr) {
+            let msg = 'Request failed';
+            try { msg = JSON.parse(xhr.responseText).error; } catch (e) {}
+            $('#status').addClass('error').text(msg);
+          }
+        },
+        columns: [
+          { data: 'AptNum' },
+          { data: 'PatNum' },
+          { data: 'AptDateTime' },
+          { data: 'AptStatus' },
+          { data: 'ProcDescript' },
+          { data: 'Op' },
+          { data: 'ProvNum' },
+          { data: 'IsNewPatient' },
+          { data: 'Note', defaultContent: '' }
+        ],
+        order: [[2, 'desc']],
+        pageLength: 25,
+        deferRender: true,
+        initComplete: done
+      });
+    }
+
+    function done() {
+      const count = table ? table.data().count() : 0;
+      $('#status').text(count + ' appointments loaded');
+    }
+
+    $('#loadBtn').on('click', loadTable);
+    $(loadTable);
+  </script>
+</body>
+</html>
