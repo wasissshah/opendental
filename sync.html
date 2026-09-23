@@ -72,6 +72,7 @@
             <option value="Prospective">Prospective</option>
           </select>
         </label>
+        <label>Limit (0 = all) <input type="number" id="patLimit" value="10" min="0" style="width:110px"></label>
       </div>
       <button data-action="patients">Sync patients</button>
     </div>
@@ -82,6 +83,7 @@
       <div class="row">
         <label>From <input type="date" id="dateStart"></label>
         <label>To <input type="date" id="dateEnd"></label>
+        <label>Limit (0 = all) <input type="number" id="aptLimit" value="10" min="0" style="width:110px"></label>
       </div>
       <button data-action="appointments">Sync appointments</button>
     </div>
@@ -100,10 +102,13 @@
   <script>
     const $ = s => document.querySelector(s);
 
-    // Default dates: last 7 days to next 30 days
-    const d = n => { const x = new Date(); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
-    $('#dateStart').value = d(-7);
-    $('#dateEnd').value = d(30);
+    // Default dates: today
+    const d = n => {
+      const x = new Date(); x.setDate(x.getDate() + n);
+      return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+    };
+    $('#dateStart').value = d(0);
+    $('#dateEnd').value = d(0);
     try { $('#key').value = sessionStorage.getItem('syncKey') || ''; } catch (e) {}
 
     let busy = false;
@@ -158,10 +163,12 @@
       if (action === 'patients') {
         params.since = $('#since').value;
         params.PatStatus = $('#patStatus').value;
+        params.limit = $('#patLimit').value;
       }
       if (action === 'appointments') {
         params.dateStart = $('#dateStart').value;
         params.dateEnd = $('#dateEnd').value;
+        params.limit = $('#aptLimit').value;
       }
 
       try {

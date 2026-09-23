@@ -284,7 +284,8 @@ function action_patients($start, $dryRun) {
     if (!empty($_GET['since'])) $params['DateTStamp'] = $_GET['since'] . ' 00:00:00';
     if (!empty($_GET['PatStatus'])) $params['PatStatus'] = $_GET['PatStatus'];
 
-    $list = od_all('patients/Simple', $params);
+    $list = cached_list('patients', $params, $start, fn() => od_all('patients/Simple', $params));
+    $list = apply_limit($list);
     return run_batch($list, $start, $dryRun, function ($p) use ($dryRun) {
         [$id, $result] = push_patient($p, $dryRun);
         return [
@@ -308,9 +309,12 @@ function action_appointments($start, $dryRun) {
         throw new Exception('Pick a From and To date for appointments.');
     }
 
-    $list = od_all('appointments', $params);
-    // Only statuses we sync
-    $list = array_values(array_filter($list, fn($a) => ghl_status($a['AptStatus'] ?? '') !== null));
+    $list = cached_list('appointments', $params, $start, function () use ($params) {
+        $all = od_all('appointments', $params);
+        // Only statuses we sync
+        return array_values(array_filter($all, fn($a) => ghl_status($a['AptStatus'] ?? '') !== null));
+    });
+    $list = apply_limit($list);
 
     return run_batch($list, $start, $dryRun, function ($a) use ($dryRun) {
         [$result, $status] = push_appointment($a, $dryRun);
@@ -320,6 +324,25 @@ function action_appointments($start, $dryRun) {
             'ghl'    => $status,
         ];
     });
+}
+
+// Optional "limit" (e.g. limit=10) to sync only the first N records, for testing
+function apply_limit($list) {
+    $limit = (int)($_GET['limit'] ?? 0);
+    return $limit > 0 ? array_slice($list, 0, $limit) : $list;
+}
+
+// Download the list from Open Dental once at the start of a run, then reuse it
+// for the following batches instead of downloading it again every time.
+function cached_list($name, $params, $start, $fetch) {
+    $file = __DIR__ . '/data/list_' . $name . '_' . md5(json_encode($params)) . '.json';
+    if ($start > 0 && file_exists($file) && filemtime($file) > time() - 3600) {
+        return load_json($file, []);
+    }
+    foreach (glob(__DIR__ . '/data/list_' . $name . '_*.json') ?: [] as $old) @unlink($old);
+    $list = $fetch();
+    save_json($file, $list);
+    return $list;
 }
 
 function run_batch($list, $start, $dryRun, $fn) {
