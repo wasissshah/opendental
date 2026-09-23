@@ -48,14 +48,6 @@ render_header($loc['name'] . ' · Sync', 'locations');
 <?php endif; ?>
 
     <div class="card">
-        <div class="row" style="margin-bottom:0">
-            <button class="secondary" data-action="test">Test connections</button>
-            <button class="secondary" data-action="calendars">List GHL calendars</button>
-            <button class="secondary" data-action="checkcal">Check calendar</button>
-        </div>
-    </div>
-
-    <div class="card">
         <h2>Automatic sync</h2>
         <p>Open Dental sends every change to this portal within about a minute: new, moved, completed, broken or deleted appointments, and new or edited patients. It runs 24/7 on the server; this page doesn't need to be open. <b>Workstations</b> are practice computers that run Open Dental; it works while any of them is on.</p>
         <div class="row">
