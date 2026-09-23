@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Open Dental → GHL Sync</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 24px; background: #f4f6f8; color: #222; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: #666; font-size: 13px; margin-bottom: 18px; }
+    .sub a { color: #155a7c; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .card { background: #fff; padding: 18px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .card h2 { font-size: 16px; margin: 0 0 6px; }
+    .card p { font-size: 13px; color: #555; margin: 0 0 12px; line-height: 1.45; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
+    label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
+    label.inline { flex-direction: row; align-items: center; gap: 6px; }
+    input, select { padding: 7px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
+    input[type=password] { min-width: 260px; }
+    button { padding: 8px 16px; background: #155a7c; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    button.secondary { background: #fff; color: #155a7c; border: 1px solid #155a7c; }
+    button:disabled { opacity: .5; cursor: wait; }
+    #progress { font-size: 13px; margin: 16px 0 8px; color: #444; min-height: 18px; }
+    #progress.error { color: #c0392b; }
+    .bar { height: 6px; background: #e3e8ec; border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+    .bar > div { height: 100%; width: 0; background: #155a7c; transition: width .3s; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; background: #fff; }
+    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+    th { background: #f0f3f5; font-weight: 600; position: sticky; top: 0; }
+    .logwrap { max-height: 520px; overflow: auto; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .r-created, .r-updated, .r-matched { color: #1e7b34; font-weight: 600; }
+    .r-error { color: #c0392b; font-weight: 600; }
+    .r-skipped { color: #888; }
+    .r-would { color: #8a6d00; font-weight: 600; }
+    .summary { font-size: 13px; margin-bottom: 8px; }
+    code { background: #eef2f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <h1>Open Dental → GoHighLevel Sync</h1>
+  <div class="sub">Copies patients into GHL contacts and appointments into a GHL calendar. <a href="index.html">Back to data viewer</a></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="row">
+      <label>Sync password (SYNC_SECRET from config.php)
+        <input type="password" id="key" autocomplete="off">
+      </label>
+      <label class="inline"><input type="checkbox" id="dryRun" checked> Dry run (show what would happen, change nothing)</label>
+    </div>
+    <div class="row" style="margin-bottom:0">
+      <button class="secondary" data-action="test">Test connections</button>
+      <button class="secondary" data-action="calendars">List GHL calendars</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>1. Patients → Contacts</h2>
+      <p>Creates or updates a GHL contact for each patient: name, email, phone, birthday and address. New contacts get the tag <code>open-dental</code>.</p>
+      <div class="row">
+        <label>Only patients changed since
+          <input type="date" id="since">
+        </label>
+        <label>Status
+          <select id="patStatus">
+            <option value="Patient">Active patients</option>
+            <option value="">All</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Prospective">Prospective</option>
+          </select>
+        </label>
+      </div>
+      <button data-action="patients">Sync patients</button>
+    </div>
+
+    <div class="card">
+      <h2>2. Appointments → Calendar</h2>
+      <p>Creates or updates GHL appointments. Scheduled → <b>confirmed</b>, Complete → <b>showed</b>, Broken/Unscheduled → <b>cancelled</b> (and the contact gets the tag <code>od-cancelled</code>). Patients are added as contacts automatically. GHL notifications are turned off.</p>
+      <div class="row">
+        <label>From <input type="date" id="dateStart"></label>
+        <label>To <input type="date" id="dateEnd"></label>
+      </div>
+      <button data-action="appointments">Sync appointments</button>
+    </div>
+  </div>
+
+  <div id="progress"></div>
+  <div class="bar"><div id="barFill"></div></div>
+  <div class="summary" id="summary"></div>
+  <div class="logwrap">
+    <table>
+      <thead><tr><th style="width:120px">Result</th><th>Open Dental</th><th>GHL</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+
+    // Default dates: last 7 days to next 30 days
+    const d = n => { const x = new Date(); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+    $('#dateStart').value = d(-7);
+    $('#dateEnd').value = d(30);
+    try { $('#key').value = sessionStorage.getItem('syncKey') || ''; } catch (e) {}
+
+    let busy = false;
+    let counts = {};
+
+    function setProgress(text, isError) {
+      $('#progress').textContent = text;
+      $('#progress').className = isError ? 'error' : '';
+    }
+
+    function addLog(rows) {
+      const tbody = $('#log');
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        const key = (r.result || '').split(' ')[0];
+        counts[r.result] = (counts[r.result] || 0) + 1;
+        [r.result, r.od, r.ghl || ''].forEach((v, i) => {
+          const td = document.createElement('td');
+          td.textContent = v;
+          if (i === 0) td.className = 'r-' + key;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      $('#summary').textContent = Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(' · ');
+    }
+
+    async function call(params) {
+      const res = await fetch('sync.php?' + new URLSearchParams(params), {
+        headers: { 'X-Sync-Key': $('#key').value }
+      });
+      let data;
+      try { data = await res.json(); } catch (e) { throw new Error('Server returned an invalid response (HTTP ' + res.status + ')'); }
+      if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+      return data;
+    }
+
+    async function run(action) {
+      if (busy) return;
+      if (!$('#key').value) { setProgress('Enter the sync password first.', true); return; }
+      try { sessionStorage.setItem('syncKey', $('#key').value); } catch (e) {}
+
+      busy = true;
+      document.querySelectorAll('button').forEach(b => b.disabled = true);
+      $('#log').innerHTML = '';
+      $('#summary').textContent = '';
+      $('#barFill').style.width = '0';
+      counts = {};
+
+      const dryRun = $('#dryRun').checked ? 1 : 0;
+      const params = { action, dryRun };
+      if (action === 'patients') {
+        params.since = $('#since').value;
+        params.PatStatus = $('#patStatus').value;
+      }
+      if (action === 'appointments') {
+        params.dateStart = $('#dateStart').value;
+        params.dateEnd = $('#dateEnd').value;
+      }
+
+      try {
+        if (action === 'test') {
+          setProgress('Testing…');
+          const r = await call(params);
+          setProgress(r.message);
+        } else if (action === 'calendars') {
+          setProgress('Loading calendars…');
+          const r = await call(params);
+          addLog(r.calendars.map(c => ({ result: c.active === false ? 'inactive' : 'calendar', od: c.name, ghl: c.id })));
+          setProgress(r.calendars.length + ' calendars found. Copy the ID into GHL_CALENDAR_ID in config.php.');
+        } else {
+          // Process in batches until done
+          let start = 0;
+          while (start !== null) {
+            setProgress((dryRun ? 'Dry run: ' : 'Syncing ') + action + '… ' + start + ' done');
+            const r = await call({ ...params, start });
+            addLog(r.log);
+            const done = r.next === null ? r.total : r.next;
+            $('#barFill').style.width = (r.total ? (done / r.total * 100) : 100) + '%';
+            start = r.next;
+            if (start === null) {
+              setProgress((dryRun ? 'Dry run finished: ' : 'Finished: ') + r.total + ' ' + action + ' checked.' +
+                           (dryRun ? ' Untick "Dry run" to actually sync.' : ''));
+            }
+          }
+        }
+      } catch (e) {
+        setProgress(e.message, true);
+      } finally {
+        busy = false;
+        document.querySelectorAll('button').forEach(b => b.disabled = false);
+      }
+    }
+
+    document.querySelectorAll('button[data-action]').forEach(b =>
+      b.addEventListener('click', () => run(b.dataset.action)));
+  </script>
+</body>
+</html>
