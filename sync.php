@@ -332,7 +332,8 @@ function action_computers() {
     $out = [];
     foreach ($list as $c) {
         $hb = $c['LastHeartBeat'] ?? '';
-        $out[] = ['name' => $c['CompName'] ?? '', 'lastSeen' => strpos($hb, '0001-01-01') === 0 ? 'never / unknown' : $hb];
+        $out[] = ['name' => $c['CompName'] ?? '', 'lastSeen' => strpos($hb, '0001-01-01') === 0 ? 'never / unknown' : $hb,
+                  'heartbeat' => strpos($hb, '0001-01-01') === 0 ? '' : $hb];
     }
     return ['computers' => $out];
 }
@@ -355,8 +356,10 @@ function action_subscriptions() {
 }
 
 function action_subscribe() {
-    $pc = trim($_GET['workstation'] ?? '');
-    if ($pc === '') throw new Exception('Enter the Workstation: the computer name at the practice that runs Open Dental.');
+    // One or more computers, separated by commas
+    $pcs = array_values(array_unique(array_filter(array_map('trim', explode(',', $_GET['workstation'] ?? '')))));
+    if (!$pcs) throw new Exception('Enter at least one Workstation (practice computer name).');
+    if (count($pcs) > 15) throw new Exception('Please pick 15 computers or fewer.');
     $seconds = max(15, (int)($_GET['seconds'] ?? 60));
 
     // Remove our old subscriptions first so there are no duplicates
@@ -366,19 +369,21 @@ function action_subscribe() {
         }
     }
 
-    $made = [];
-    foreach (WATCH_TABLES as $table) {
-        $r = od_send('POST', 'subscriptions', [
-            'EndPointUrl'    => webhook_url(),
-            'Workstation'    => $pc,
-            'WatchTable'     => $table,
-            'PollingSeconds' => $seconds,
-            'Note'           => 'GHL sync',
-        ]);
-        $made[] = $table . ' (#' . ($r['SubscriptionNum'] ?? '?') . ')';
+    $count = 0;
+    foreach ($pcs as $pc) {
+        foreach (WATCH_TABLES as $table) {
+            od_send('POST', 'subscriptions', [
+                'EndPointUrl'    => webhook_url(),
+                'Workstation'    => $pc,
+                'WatchTable'     => $table,
+                'PollingSeconds' => $seconds,
+                'Note'           => 'GHL sync',
+            ]);
+            $count++;
+        }
     }
-    return ['message' => 'Automatic sync switched on for: ' . implode(', ', $made) .
-                         ". Open Dental on $pc will check every $seconds seconds and send changes."];
+    return ['message' => "Automatic sync switched on for " . count($pcs) . " computer(s): " . implode(', ', $pcs) .
+                         " ($count subscriptions, checking every $seconds seconds). It keeps working as long as any of them is on."];
 }
 
 function action_unsubscribe() {

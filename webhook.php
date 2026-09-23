@@ -88,6 +88,15 @@ $done = 0; $errors = 0;
 foreach ($rows as $row) {
     if (!is_array($row)) continue;
     $kind = row_kind($row, $eventType);
+
+    // Several computers send the same change. Skip it if we already handled this exact version.
+    $id = $kind === 'patient' ? ($row['PatNum'] ?? '') : ($row['AptNum'] ?? '');
+    $version = $row['DateTStamp'] ?? md5(json_encode($row));
+    $seenKey = $kind . ':' . $id;
+    if ($id !== '' && ($MAP['seen'][$seenKey] ?? null) === $version) {
+        continue;
+    }
+
     try {
         switch ($kind) {
             case 'appointment':
@@ -103,19 +112,24 @@ foreach ($rows as $row) {
                     wlog("Pat #{$row['PatNum']} changed -> skipped (not in GHL yet)");
                     break;
                 }
-                [$id, $result] = push_patient($row, false);
+                [$cid, $result] = push_patient($row, false);
                 wlog("Pat #{$row['PatNum']} {$row['FName']} {$row['LName']} -> $result");
                 break;
             default:
                 wlog("Unknown event ($eventType): " . substr(json_encode($row), 0, 200));
         }
         $done++;
+        if ($id !== '') $MAP['seen'][$seenKey] = $version;
     } catch (Exception $e) {
         $errors++;
         wlog("ERROR $kind " . json_encode(array_intersect_key($row, ['AptNum' => 1, 'PatNum' => 1])) . ': ' . $e->getMessage());
     }
 }
 
+// Keep the "already handled" list from growing forever
+if (!empty($MAP['seen']) && count($MAP['seen']) > 20000) {
+    $MAP['seen'] = array_slice($MAP['seen'], -10000, null, true);
+}
 save_json(MAP_FILE, $MAP);
 flock($lock, LOCK_UN);
 fclose($lock);

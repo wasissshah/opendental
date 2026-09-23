@@ -96,10 +96,11 @@
     <p>Open Dental checks for changes every few seconds and sends them here straight away. New, moved, completed, broken or deleted appointments and new or edited patients go into GHL with no button to press.
        <b>Workstation</b> is the name of a computer at the practice that is always on and runs Open Dental (or the Open Dental API Service). Ask the practice for it: on that PC, Windows Settings → System → About → Device name.</p>
     <div class="row">
-      <label>Workstation (practice computer name)
-        <input type="text" id="workstation" placeholder="e.g. FRONTDESK1">
+      <label>Workstation(s), separated by commas
+        <input type="text" id="workstation" placeholder="e.g. ADMIN, CHECKOUT" style="min-width:420px">
       </label>
       <button class="secondary" data-action="computers">Find practice computers</button>
+      <button class="secondary" id="useActive" type="button">Use all active computers</button>
       <label>Check every (seconds)
         <input type="number" id="seconds" value="60" min="15" style="width:110px">
       </label>
@@ -202,16 +203,23 @@
         } else if (action === 'computers') {
           setProgress('Loading computers from Open Dental…');
           const r = await call(params);
+          lastComputers = r.computers;
           addLog(r.computers.map(c => ({ result: 'computer', od: c.name, ghl: 'last active: ' + c.lastSeen })));
           if (r.computers.length) {
             $('#workstation').value = r.computers[0].name;
-            setProgress('Filled in the most recently active computer (' + r.computers[0].name + '). Pick another from the list if the practice prefers. Click a name to use it.');
+            setProgress('Filled in the most recently active computer (' + r.computers[0].name + '). Pick another from the list if the practice prefers. Click names to add or remove them.');
           } else {
             setProgress('No computers returned. Ask the practice for the computer name.', true);
           }
           document.querySelectorAll('#log tr').forEach(tr => {
             tr.style.cursor = 'pointer';
-            tr.addEventListener('click', () => { $('#workstation').value = tr.children[1].textContent; });
+            tr.addEventListener('click', () => {
+              const name = tr.children[1].textContent;
+              const list = $('#workstation').value.split(',').map(x => x.trim()).filter(Boolean);
+              const i = list.indexOf(name);
+              if (i >= 0) list.splice(i, 1); else list.push(name);   // click again to remove
+              $('#workstation').value = list.join(', ');
+            });
           });
         } else if (action === 'subscribe') {
           params.workstation = $('#workstation').value;
@@ -275,6 +283,18 @@
         document.querySelectorAll('button').forEach(b => b.disabled = false);
       }
     }
+
+    // Computers seen in the last 24 hours (compared with the most recent one)
+    let lastComputers = [];
+    $('#useActive').addEventListener('click', async () => {
+      if (!lastComputers.length) { await run('computers'); }
+      const withBeat = lastComputers.filter(c => c.heartbeat);
+      if (!withBeat.length) { setProgress('No active computers found.', true); return; }
+      const newest = new Date(withBeat[0].heartbeat.replace(' ', 'T')).getTime();
+      const active = withBeat.filter(c => newest - new Date(c.heartbeat.replace(' ', 'T')).getTime() < 24 * 3600 * 1000);
+      $('#workstation').value = active.map(c => c.name).join(', ');
+      setProgress(active.length + ' computers active in the last 24 hours filled in. Now click "Switch on".');
+    });
 
     document.querySelectorAll('button[data-action]').forEach(b =>
       b.addEventListener('click', () => run(b.dataset.action)));
