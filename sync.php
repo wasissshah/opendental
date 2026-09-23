@@ -61,6 +61,9 @@ function http_json($method, $url, $headers, $body = null) {
 
         if ($raw === false) throw new Exception("cURL error: $err");
         if ($code == 429) { sleep(2 + $attempt * 2); continue; }
+        if ($code == 400 && strpos($raw, 'Calendar is inactive') !== false) {
+            throw new Exception('GHL says the calendar is inactive. Click "Check calendar" on the sync page: the calendar needs a team member (owner) with availability, or set GHL_ASSIGNED_USER_ID in config.php.');
+        }
         if ($code < 200 || $code >= 300) {
             throw new Exception("HTTP $code from " . parse_url($url, PHP_URL_HOST) . ": " . substr($raw, 0, 500));
         }
@@ -207,6 +210,20 @@ function ensure_contact($patNum, $dryRun) {
     return $id;
 }
 
+// The user the appointments are assigned to.
+// Personal calendars need this, or GHL answers "Calendar is inactive".
+function calendar_user_id() {
+    static $uid = null;
+    if ($uid !== null) return $uid;
+    if (defined('GHL_ASSIGNED_USER_ID') && GHL_ASSIGNED_USER_ID !== '') return $uid = GHL_ASSIGNED_USER_ID;
+    $res = ghl('GET', 'calendars/' . GHL_CALENDAR_ID, null, '2021-04-15');
+    $members = $res['calendar']['teamMembers'] ?? [];
+    foreach ($members as $m) {
+        if (!empty($m['userId'])) return $uid = $m['userId'];
+    }
+    return $uid = '';
+}
+
 function push_appointment($a, $dryRun) {
     global $MAP;
     $aptNum   = (string)$a['AptNum'];
@@ -237,6 +254,8 @@ function push_appointment($a, $dryRun) {
         $body['endTime']   = to_iso($when, apt_minutes($a['Pattern'] ?? ''));
     }
     if (!empty($a['Note'])) $body['description'] = $a['Note'];
+    $userId = calendar_user_id();
+    if ($userId !== '') $body['assignedUserId'] = $userId;
 
     if ($existing) {
         try {
@@ -271,6 +290,19 @@ function action_calendars() {
         $out[] = ['id' => $c['id'], 'name' => $c['name'] ?? '', 'active' => $c['isActive'] ?? null];
     }
     return ['calendars' => $out];
+}
+
+function action_checkcal() {
+    $res = ghl('GET', 'calendars/' . GHL_CALENDAR_ID, null, '2021-04-15');
+    $c = $res['calendar'] ?? [];
+    $members = array_map(fn($m) => ($m['userId'] ?? '?') . (isset($m['isPrimary']) && $m['isPrimary'] ? ' (primary)' : ''), $c['teamMembers'] ?? []);
+    return ['info' => [
+        ['k' => 'Name',          'v' => $c['name'] ?? ''],
+        ['k' => 'Type',          'v' => $c['calendarType'] ?? ''],
+        ['k' => 'Active (API)',  'v' => isset($c['isActive']) ? ($c['isActive'] ? 'yes' : 'NO') : 'unknown'],
+        ['k' => 'Team members',  'v' => $members ? implode(', ', $members) : 'NONE: add yourself as the owner/team member'],
+        ['k' => 'Assigned user used by sync', 'v' => calendar_user_id() ?: 'none'],
+    ]];
 }
 
 function action_test() {
@@ -380,6 +412,7 @@ try {
     switch ($action) {
         case 'test':         $out = action_test(); break;
         case 'calendars':    $out = action_calendars(); break;
+        case 'checkcal':     $out = action_checkcal(); break;
         case 'patients':     $out = action_patients($start, $dryRun); break;
         case 'appointments': $out = action_appointments($start, $dryRun); break;
         default: throw new Exception('Unknown action. Use test, calendars, patients or appointments.');

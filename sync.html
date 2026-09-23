@@ -53,6 +53,7 @@
     <div class="row" style="margin-bottom:0">
       <button class="secondary" data-action="test">Test connections</button>
       <button class="secondary" data-action="calendars">List GHL calendars</button>
+      <button class="secondary" data-action="checkcal">Check calendar</button>
     </div>
   </div>
 
@@ -176,6 +177,11 @@
           setProgress('Testing…');
           const r = await call(params);
           setProgress(r.message);
+        } else if (action === 'checkcal') {
+          setProgress('Checking calendar…');
+          const r = await call(params);
+          addLog(r.info.map(i => ({ result: 'info', od: i.k, ghl: i.v })));
+          setProgress('Calendar settings as GHL reports them.');
         } else if (action === 'calendars') {
           setProgress('Loading calendars…');
           const r = await call(params);
