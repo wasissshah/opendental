@@ -37,4 +37,4 @@ define('CONTACT_SOURCE', 'opendental');    // Contact Source on every contact
 define('SYNC_ALL_PATIENT_CHANGES', true);  // automatic sync: send every edited patient to GHL
 
 // Show PHP errors on screen (turn on only while debugging)
-define('APP_DEBUG', true);
+define('APP_DEBUG', false);
