@@ -61,7 +61,7 @@ render_header($loc['name'] . ' · Sync', 'locations');
 </div>
 
 <div class="grid2">
-  <div class="card">
+  <div class="card" style="display: none">
     <h2>1. Patients → Contacts</h2>
     <p>Creates or updates a GHL contact for each patient: name, email, phone, birthday and address. Every contact gets the tag <code><?= e(CONTACT_TAG) ?></code> and Contact Source <code><?= e(CONTACT_SOURCE) ?></code>.</p>
     <div class="row">
