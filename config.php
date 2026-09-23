@@ -13,7 +13,7 @@ define('DB_PASS', 'u937090168_Speedadsai');
 // Encryption key for API keys stored in the database. 64 hex characters.
 // Generate once and NEVER change it later (saved keys could not be decrypted).
 // Leave as-is and open setup.php: it shows a fresh random key you can paste here.
-define('APP_KEY', 'PASTE_64_HEX_CHARACTERS');
+define('APP_KEY', '9fa24014eb3db3c37e4f9341508d0f5f352452e7c3858646671d0e1cbb659662');
 
 // Full address of the portal, no trailing slash. Used in emails and webhook links.
 define('APP_URL', 'https://opendental.speedadsai.com');
