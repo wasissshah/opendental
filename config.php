@@ -28,6 +28,6 @@ define('GHL_CALENDAR_ID', 'IVGLhL7dm29tjfiXuCHw');
 define('PRACTICE_TIMEZONE', 'America/Denver');
  
 // Password for sync.php. Make up a long random string and type it into sync.html.
-define('SYNC_SECRET', 'CHANGE_ME_TO_A_LONG_RANDOM_STRING');
+define('SYNC_SECRET', 'b71b6f25d21cf5b24d034bdf28d56d4cac05d188');
  
  
