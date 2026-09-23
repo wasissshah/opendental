@@ -30,6 +30,14 @@ define('GHL_ASSIGNED_USER_ID', 'HuM7aGsSdjKjz2sbUaFq');
 // The practice's time zone. Open Dental times are local practice time.
 // Arvada, Colorado = America/Denver
 define('PRACTICE_TIMEZONE', 'America/Denver');
+
+// ---------------- Automatic sync ----------------
+// true  = every patient added or edited in Open Dental is sent to GHL
+// false = only patients already in GHL (e.g. added through an appointment) are updated
+define('SYNC_ALL_PATIENT_CHANGES', true);
+ 
+// Optional: full webhook address if the automatic one is wrong. Normally leave ''.
+define('WEBHOOK_URL', '');
  
 // Password for sync.php. Make up a long random string and type it into sync.html.
 define('SYNC_SECRET', 'b71b6f25d21cf5b24d034bdf28d56d4cac05d188');

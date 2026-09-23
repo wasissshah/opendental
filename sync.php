@@ -21,7 +21,9 @@ const BATCH_SIZE    = 25;   // records per web request (keeps shared hosting und
 $IS_CLI = (PHP_SAPI === 'cli');
 set_time_limit($IS_CLI ? 0 : 120);
 
-if ($IS_CLI) {
+if (defined('SYNC_LIB_ONLY')) {
+    // Included by webhook.php: only load the functions below
+} elseif ($IS_CLI) {
     // Allow "php sync.php action=appointments days=30"
     parse_str(implode('&', array_slice($argv, 1)), $_GET);
 } else {
@@ -78,6 +80,13 @@ function od($path, $params = []) {
         'Authorization: ODFHIR ' . OD_DEVELOPER_KEY . '/' . OD_CUSTOMER_KEY,
         'Content-Type: application/json',
     ]);
+}
+
+function od_send($method, $path, $body = null) {
+    return http_json($method, OD_BASE_URL . $path, [
+        'Authorization: ODFHIR ' . OD_DEVELOPER_KEY . '/' . OD_CUSTOMER_KEY,
+        'Content-Type: application/json',
+    ], $body);
 }
 
 function od_all($path, $params = []) {
@@ -305,6 +314,78 @@ function action_checkcal() {
     ]];
 }
 
+// ---------- Automatic sync (Open Dental API Events) ----------
+
+function webhook_url() {
+    if (defined('WEBHOOK_URL') && WEBHOOK_URL !== '') return WEBHOOK_URL;
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $dir   = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
+    return $https . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/webhook.php?k=' . urlencode(SYNC_SECRET);
+}
+
+const WATCH_TABLES = ['Appointment', 'AppointmentDeleted', 'Patient'];
+
+function action_subscriptions() {
+    $subs = od_send('GET', 'subscriptions');
+    $out = [];
+    foreach ((array)$subs as $s) {
+        $url = $s['EndPointUrl'] ?? '';
+        $out[] = [
+            'num'   => $s['SubscriptionNum'] ?? '',
+            'what'  => ($s['WatchTable'] ?? '') ?: ($s['UiEventType'] ?? ''),
+            'every' => $s['PollingSeconds'] ?? '',
+            'pc'    => $s['Workstation'] ?? '',
+            'ours'  => strpos($url, 'webhook.php') !== false,
+            'url'   => preg_replace('/k=[^&]+/', 'k=***', $url),
+        ];
+    }
+    return ['subscriptions' => $out];
+}
+
+function action_subscribe() {
+    $pc = trim($_GET['workstation'] ?? '');
+    if ($pc === '') throw new Exception('Enter the Workstation: the computer name at the practice that runs Open Dental.');
+    $seconds = max(15, (int)($_GET['seconds'] ?? 60));
+
+    // Remove our old subscriptions first so there are no duplicates
+    foreach ((array)od_send('GET', 'subscriptions') as $s) {
+        if (strpos($s['EndPointUrl'] ?? '', 'webhook.php') !== false) {
+            od_send('DELETE', 'subscriptions/' . $s['SubscriptionNum']);
+        }
+    }
+
+    $made = [];
+    foreach (WATCH_TABLES as $table) {
+        $r = od_send('POST', 'subscriptions', [
+            'EndPointUrl'    => webhook_url(),
+            'Workstation'    => $pc,
+            'WatchTable'     => $table,
+            'PollingSeconds' => $seconds,
+            'Note'           => 'GHL sync',
+        ]);
+        $made[] = $table . ' (#' . ($r['SubscriptionNum'] ?? '?') . ')';
+    }
+    return ['message' => 'Automatic sync switched on for: ' . implode(', ', $made) .
+                         ". Open Dental on $pc will check every $seconds seconds and send changes."];
+}
+
+function action_unsubscribe() {
+    $n = 0;
+    foreach ((array)od_send('GET', 'subscriptions') as $s) {
+        if (strpos($s['EndPointUrl'] ?? '', 'webhook.php') !== false) {
+            od_send('DELETE', 'subscriptions/' . $s['SubscriptionNum']);
+            $n++;
+        }
+    }
+    return ['message' => "Automatic sync switched off ($n subscriptions removed)."];
+}
+
+function action_webhooklog() {
+    $file = __DIR__ . '/data/webhook.log';
+    $lines = file_exists($file) ? array_slice(file($file, FILE_IGNORE_NEW_LINES), -100) : [];
+    return ['lines' => array_reverse($lines)];
+}
+
 function action_test() {
     $od  = od('patients/Simple', ['Offset' => 0]);
     $ghl = ghl('GET', 'contacts/?locationId=' . urlencode(GHL_LOCATION_ID) . '&limit=1');
@@ -397,6 +478,8 @@ function run_batch($list, $start, $dryRun, $fn) {
     return ['total' => $total, 'next' => $end < $total ? $end : null, 'log' => $log];
 }
 
+if (defined('SYNC_LIB_ONLY')) return;
+
 // ============================================================ Run
 
 try {
@@ -413,6 +496,10 @@ try {
         case 'test':         $out = action_test(); break;
         case 'calendars':    $out = action_calendars(); break;
         case 'checkcal':     $out = action_checkcal(); break;
+        case 'subscriptions':$out = action_subscriptions(); break;
+        case 'subscribe':    $out = action_subscribe(); break;
+        case 'unsubscribe':  $out = action_unsubscribe(); break;
+        case 'webhooklog':   $out = action_webhooklog(); break;
         case 'patients':     $out = action_patients($start, $dryRun); break;
         case 'appointments': $out = action_appointments($start, $dryRun); break;
         default: throw new Exception('Unknown action. Use test, calendars, patients or appointments.');

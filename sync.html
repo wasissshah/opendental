@@ -33,6 +33,7 @@
     .r-created, .r-updated, .r-matched { color: #1e7b34; font-weight: 600; }
     .r-error { color: #c0392b; font-weight: 600; }
     .r-skipped { color: #888; }
+    .r-active { color: #1e7b34; font-weight: 600; }
     .r-would { color: #8a6d00; font-weight: 600; }
     .summary { font-size: 13px; margin-bottom: 8px; }
     code { background: #eef2f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
@@ -87,6 +88,26 @@
         <label>Limit (0 = all) <input type="number" id="aptLimit" value="10" min="0" style="width:110px"></label>
       </div>
       <button data-action="appointments">Sync appointments</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>3. Automatic sync</h2>
+    <p>Open Dental checks for changes every few seconds and sends them here straight away. New, moved, completed, broken or deleted appointments and new or edited patients go into GHL with no button to press.
+       <b>Workstation</b> is the name of a computer at the practice that is always on and runs Open Dental (or the Open Dental API Service). Ask the practice for it: on that PC, Windows Settings → System → About → Device name.</p>
+    <div class="row">
+      <label>Workstation (practice computer name)
+        <input type="text" id="workstation" placeholder="e.g. FRONTDESK1">
+      </label>
+      <label>Check every (seconds)
+        <input type="number" id="seconds" value="60" min="15" style="width:110px">
+      </label>
+    </div>
+    <div class="row" style="margin-bottom:0">
+      <button data-action="subscribe">Switch on</button>
+      <button class="secondary" data-action="subscriptions">Show status</button>
+      <button class="secondary" data-action="webhooklog">Activity log</button>
+      <button class="secondary" data-action="unsubscribe">Switch off</button>
     </div>
   </div>
 
@@ -177,6 +198,35 @@
           setProgress('Testing…');
           const r = await call(params);
           setProgress(r.message);
+        } else if (action === 'subscribe') {
+          params.workstation = $('#workstation').value;
+          params.seconds = $('#seconds').value;
+          setProgress('Switching on…');
+          const r = await call(params);
+          setProgress(r.message);
+        } else if (action === 'unsubscribe') {
+          setProgress('Switching off…');
+          const r = await call(params);
+          setProgress(r.message);
+        } else if (action === 'subscriptions') {
+          setProgress('Loading…');
+          const r = await call(params);
+          addLog(r.subscriptions.map(x => ({
+            result: x.ours ? 'active' : 'other app',
+            od: '#' + x.num + ' · ' + x.what + ' · every ' + x.every + 's · on ' + x.pc,
+            ghl: x.url
+          })));
+          const ours = r.subscriptions.filter(x => x.ours).length;
+          setProgress(ours ? 'Automatic sync is ON (' + ours + ' subscriptions).' : 'Automatic sync is OFF.');
+        } else if (action === 'webhooklog') {
+          setProgress('Loading…');
+          const r = await call(params);
+          addLog(r.lines.map(l => ({
+            result: l.includes('ERROR') ? 'error' : 'event',
+            od: l.slice(0, 19),
+            ghl: l.slice(21)
+          })));
+          setProgress(r.lines.length ? 'Last ' + r.lines.length + ' automatic events, newest first.' : 'No automatic events received yet.');
         } else if (action === 'checkcal') {
           setProgress('Checking calendar…');
           const r = await call(params);
