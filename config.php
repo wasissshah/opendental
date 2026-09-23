@@ -1,45 +1,40 @@
 <?php
-// config.php — keep this file private (never put it in a public web folder on a live server)
+// config.php — portal settings. Keep this file private.
+// Location credentials (GHL + Open Dental) are NOT here: they are entered in the portal
+// per location and stored encrypted in the database.
 
-define('OD_BASE_URL', 'https://api.opendental.com/api/v1/');
+// ---------------- Database (hPanel > Databases > MySQL Databases) ----------------
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'u123456789_portal');   // your database name
+define('DB_USER', 'u123456789_portal');   // your database user
+define('DB_PASS', 'PASTE_DB_PASSWORD');
 
-// Developer Key: Developer Portal > Account
-define('OD_DEVELOPER_KEY', '5MINUkGjsqKg5MiJ');
+// ---------------- Security ----------------
+// Encryption key for API keys stored in the database. 64 hex characters.
+// Generate once and NEVER change it later (saved keys could not be decrypted).
+// Leave as-is and open setup.php: it shows a fresh random key you can paste here.
+define('APP_KEY', 'PASTE_64_HEX_CHARACTERS');
 
-// Customer Key: Developer Portal > Customer Keys (the Arvada Implants key)
-define('OD_CUSTOMER_KEY', 'pdoxOoT8CcsGi4Kd');
+// Full address of the portal, no trailing slash. Used in emails and webhook links.
+define('APP_URL', 'https://opendental.speedadsai.com');
 
-define('OD_CA_FILE', '');
+define('APP_NAME', 'Admin Portal');
 
+// ---------------- Email for login codes ----------------
+// 'smtp' = send through a Hostinger mailbox (recommended; create one in hPanel > Emails)
+// 'mail' = PHP mail() (works on Hostinger, but more likely to land in spam)
+define('MAIL_DRIVER', 'smtp');
+define('SMTP_HOST', 'smtp.hostinger.com');
+define('SMTP_PORT', 465);                        // 465 = SSL
+define('SMTP_USER', 'no-reply@speedadsai.com');  // the mailbox
+define('SMTP_PASS', 'PASTE_MAILBOX_PASSWORD');
+define('MAIL_FROM', 'no-reply@speedadsai.com');
+define('MAIL_FROM_NAME', 'Admin Portal');
 
-// ---------------- GoHighLevel ----------------
-// Private Integration token (starts with "pit-"): Settings > Private Integrations
-define('GHL_TOKEN', 'pit-f8b95c0d-5deb-4662-a445-0968b09e9cea');
- 
-// Sub-account (location) ID: the part after /location/ in your GHL address bar
-define('GHL_LOCATION_ID', 'VuqwtrNXGZ2nRYITMjn6');
- 
-// Calendar that Open Dental appointments go into.
-// Open sync.html and click "List GHL calendars" to find the ID.
-define('GHL_CALENDAR_ID', 'lVGLhL7dm29tjfiXuCHw');
+// ---------------- Sync defaults (all locations) ----------------
+define('CONTACT_TAG', 'opendental');       // tag on every contact created or updated
+define('CONTACT_SOURCE', 'opendental');    // Contact Source on every contact
+define('SYNC_ALL_PATIENT_CHANGES', true);  // automatic sync: send every edited patient to GHL
 
-// Optional: GHL user ID the appointments are assigned to.
-// Leave empty to use the calendar's owner automatically.
-define('GHL_ASSIGNED_USER_ID', 'HuM7aGsSdjKjz2sbUaFq');
- 
-// The practice's time zone. Open Dental times are local practice time.
-// Arvada, Colorado = America/Denver
-define('PRACTICE_TIMEZONE', 'America/Denver');
-
-// ---------------- Automatic sync ----------------
-// true  = every patient added or edited in Open Dental is sent to GHL
-// false = only patients already in GHL (e.g. added through an appointment) are updated
-define('SYNC_ALL_PATIENT_CHANGES', true);
- 
-// Optional: full webhook address if the automatic one is wrong. Normally leave ''.
-define('WEBHOOK_URL', '');
- 
-// Password for sync.php. Make up a long random string and type it into sync.html.
-define('SYNC_SECRET', 'b71b6f25d21cf5b24d034bdf28d56d4cac05d188');
- 
- 
+// Show PHP errors on screen (turn on only while debugging)
+define('APP_DEBUG', false);

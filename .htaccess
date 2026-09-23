@@ -1,0 +1,13 @@
+# Block direct access to private files and folders
+<FilesMatch "^(config\.php|database\.sql|.*\.log|.*\.json)$">
+  Require all denied
+</FilesMatch>
+RedirectMatch 404 ^/(lib|data)(/.*)?$
+
+# Pass the Authorization header through to PHP (Open Dental webhook sends it)
+RewriteEngine On
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+DirectoryIndex index.php
+Options -Indexes

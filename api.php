@@ -1,156 +1,62 @@
 <?php
-// api.php — server-side proxy to the Open Dental API.
-// Only the resources and filters listed below can be requested from the page.
+// api.php?loc=ID&resource=... — read-only Open Dental data for the data viewer.
+// Admins and staff assigned to the location can use it.
+require __DIR__ . '/lib/bootstrap.php';
+require __DIR__ . '/lib/engine.php';
 
-require __DIR__ . '/config.php';
-
-header('Content-Type: application/json');
+[$user, $locId] = require_location_access(true);
 set_time_limit(300);
 
-// resource key => [endpoint, allowed filters, paged?]
 $RESOURCES = [
-    'appointments' => [
-        'endpoint' => 'appointments',
-        'params'   => ['date', 'dateStart', 'dateEnd', 'AptStatus', 'PatNum', 'Op', 'ClinicNum', 'AppointmentTypeNum'],
-        'paged'    => true,
-    ],
-    'asap' => [
-        'endpoint' => 'appointments/ASAP',
-        'params'   => ['ClinicNum', 'ProvNum'],
-        'paged'    => true,
-    ],
-    'slots' => [
-        'endpoint' => 'appointments/Slots',
-        'params'   => ['date', 'dateStart', 'dateEnd', 'lengthMinutes', 'ProvNum', 'OpNum'],
-        'paged'    => false,
-    ],
-    'patients' => [
-        'endpoint' => 'patients/Simple',
-        'params'   => ['LName', 'FName', 'PatStatus', 'Gender', 'Birthdate', 'PriProv', 'ClinicNum'],
-        'paged'    => true,
-    ],
-    'providers' => [
-        'endpoint' => 'providers',
-        'params'   => ['ClinicNum'],
-        'paged'    => false,
-    ],
-    'operatories' => [
-        'endpoint' => 'operatories',
-        'params'   => ['ClinicNum'],
-        'paged'    => false,
-    ],
-    'clinics' => [
-        'endpoint' => 'clinics',
-        'params'   => [],
-        'paged'    => false,
-    ],
-    'appointmenttypes' => [
-        'endpoint' => 'appointmenttypes',
-        'params'   => [],
-        'paged'    => false,
-    ],
+    'appointments'     => ['endpoint' => 'appointments',       'params' => ['date', 'dateStart', 'dateEnd', 'AptStatus', 'PatNum', 'Op', 'ClinicNum', 'AppointmentTypeNum'], 'paged' => true],
+    'asap'             => ['endpoint' => 'appointments/ASAP',  'params' => ['ClinicNum', 'ProvNum'], 'paged' => true],
+    'slots'            => ['endpoint' => 'appointments/Slots', 'params' => ['date', 'dateStart', 'dateEnd', 'lengthMinutes', 'ProvNum', 'OpNum'], 'paged' => false],
+    'patients'         => ['endpoint' => 'patients/Simple',    'params' => ['LName', 'FName', 'PatStatus', 'Gender', 'Birthdate', 'PriProv', 'ClinicNum'], 'paged' => true],
+    'providers'        => ['endpoint' => 'providers',          'params' => ['ClinicNum'], 'paged' => false],
+    'operatories'      => ['endpoint' => 'operatories',        'params' => ['ClinicNum'], 'paged' => false],
+    'clinics'          => ['endpoint' => 'clinics',            'params' => [], 'paged' => false],
+    'appointmenttypes' => ['endpoint' => 'appointmenttypes',   'params' => [], 'paged' => false],
 ];
 
-function od_get($endpoint, $params = []) {
-    $url = OD_BASE_URL . $endpoint;
-    if (!empty($params)) {
-        $url .= '?' . http_build_query($params);
-    }
-
-    $opts = [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 120,
-        CURLOPT_HTTPHEADER     => [
-            'Authorization: ODFHIR ' . OD_DEVELOPER_KEY . '/' . OD_CUSTOMER_KEY,
-            'Content-Type: application/json',
-        ],
-    ];
-    if (defined('OD_CA_FILE') && OD_CA_FILE !== '') {
-        $opts[CURLOPT_CAINFO] = OD_CA_FILE;
-    }
-
-    $ch = curl_init($url);
-    curl_setopt_array($ch, $opts);
-    $body = curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err  = curl_error($ch);
-    curl_close($ch);
-
-    if ($body === false) {
-        throw new Exception('cURL error: ' . $err);
-    }
-    if ($code < 200 || $code >= 300) {
-        throw new Exception("Open Dental returned HTTP $code: $body");
-    }
-    $json = json_decode($body, true);
-    if (!is_array($json)) {
-        return [];
-    }
-    // Some endpoints return a single object instead of a list
-    return array_keys($json) === range(0, count($json) - 1) ? $json : [$json];
-}
-
-function fetch_all($res, $params) {
-    if (!$res['paged']) {
-        return od_get($res['endpoint'], $params);
-    }
-    // Open Dental returns up to 100 rows per call; keep going with Offset
-    $all      = [];
-    $pageSize = 100;
-    $offset   = 0;
-    $maxLoops = 300; // safety limit (30,000 rows)
-    while ($maxLoops-- > 0) {
-        $params['Offset'] = $offset;
-        $page = od_get($res['endpoint'], $params);
-        $all  = array_merge($all, $page);
-        if (count($page) < $pageSize) break;
-        $offset += count($page);
-    }
-    return $all;
-}
+$CANCEL_MAP = [
+    'cancelled'   => ['Broken', 'UnschedList'],
+    'broken'      => ['Broken'],
+    'unscheduled' => ['UnschedList'],
+    'active'      => ['Scheduled', 'Complete'],
+    'upcoming'    => ['Scheduled'],
+];
 
 try {
+    engine_start($locId);
+    engine_require(['od']);
+
     $key = $_GET['resource'] ?? 'appointments';
-    if (!isset($RESOURCES[$key])) {
-        throw new Exception('Unknown resource: ' . $key);
-    }
+    if (!isset($RESOURCES[$key])) throw new Exception('Unknown resource');
     $res = $RESOURCES[$key];
 
-    // Keep only allowed, non-empty filters
     $params = [];
     foreach ($res['params'] as $p) {
-        if (isset($_GET[$p]) && $_GET[$p] !== '') {
-            $params[$p] = $_GET[$p];
-        }
+        if (isset($_GET[$p]) && $_GET[$p] !== '') $params[$p] = $_GET[$p];
     }
 
-    // Cancellation filter (appointments only).
-    // In Open Dental a cancelled appointment is "Broken". If it was sent to the
-    // Unscheduled List when it was broken, its status becomes "UnschedList".
-    $CANCEL_MAP = [
-        'cancelled'   => ['Broken', 'UnschedList'],
-        'broken'      => ['Broken'],
-        'unscheduled' => ['UnschedList'],
-        'active'      => ['Scheduled', 'Complete'],
-        'upcoming'    => ['Scheduled'],
-    ];
+    $fetch = function ($params) use ($res) {
+        if (!$res['paged']) {
+            $r = od($res['endpoint'], $params);
+            return is_array($r) && array_keys($r) !== range(0, count($r) - 1) ? [$r] : (array)$r;
+        }
+        return od_all($res['endpoint'], $params);
+    };
 
     $cancel = $_GET['cancelFilter'] ?? '';
     if ($key === 'appointments' && isset($CANCEL_MAP[$cancel])) {
-        // The API accepts one AptStatus per call, so fetch each and combine
         $all = [];
         foreach ($CANCEL_MAP[$cancel] as $status) {
-            $p = $params;
-            $p['AptStatus'] = $status;
-            $all = array_merge($all, fetch_all($res, $p));
+            $all = array_merge($all, $fetch(['AptStatus' => $status] + $params));
         }
     } else {
-        $all = fetch_all($res, $params);
+        $all = $fetch($params);
     }
-
-    echo json_encode(['data' => $all]);
-
+    json_out(['data' => $all]);
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage(), 'data' => []]);
+    json_out(['error' => $e->getMessage(), 'data' => []], 500);
 }
