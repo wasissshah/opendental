@@ -25,7 +25,7 @@ define('GHL_CALENDAR_ID', 'lVGLhL7dm29tjfiXuCHw');
 
 // Optional: GHL user ID the appointments are assigned to.
 // Leave empty to use the calendar's owner automatically.
-define('GHL_ASSIGNED_USER_ID', '');
+define('GHL_ASSIGNED_USER_ID', 'HuM7aGsSdjKjz2sbUaFq');
  
 // The practice's time zone. Open Dental times are local practice time.
 // Arvada, Colorado = America/Denver
