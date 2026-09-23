@@ -29,6 +29,19 @@ render_header($loc['name'] . ' · Sync', 'locations');
         .r-would { color: var(--warn); font-weight: 600; }
         .summary { font-size: 13px; margin-bottom: 8px; }
         code { background: #eef2f4; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+        .switchbox { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-right: 8px; }
+        .switchbox .lbl { font-size: 12px; color: #555; }
+        .switchrow { display: flex; align-items: center; gap: 8px; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider { position: absolute; inset: 0; cursor: pointer; background: var(--bad, #c0392b); transition: .2s; border-radius: 24px; }
+        .switch .slider:before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; transition: .2s; border-radius: 50%; }
+        .switch input:checked + .slider { background: var(--ok, #1e7b34); }
+        .switch input:checked + .slider:before { transform: translateX(20px); }
+        .switch input:disabled + .slider { opacity: .6; cursor: wait; }
+        .switchstate { font-size: 13px; font-weight: 600; }
+        .switchstate.on { color: var(--ok, #1e7b34); }
+        .switchstate.off { color: var(--bad, #c0392b); }
     </style>
 
     <div class="head">
@@ -60,11 +73,20 @@ render_header($loc['name'] . ' · Sync', 'locations');
                 <input type="number" id="seconds" value="60" min="15" style="width:110px">
             </label>
         </div>
-        <div class="row" style="margin-bottom:0">
-            <button data-action="subscribe">Switch on</button>
+        <div class="row" style="margin-bottom:0; align-items:center">
+            <div class="switchbox">
+                <span class="lbl">Auto sync</span>
+                <div class="switchrow">
+                    <label class="switch">
+                        <input type="checkbox" id="autoSyncToggle">
+                        <span class="slider"></span>
+                    </label>
+                    <span id="autoSyncState" class="switchstate off">Off</span>
+                </div>
+            </div>
             <button class="secondary" data-action="subscriptions">Show status</button>
             <button class="secondary" data-action="log">Activity log</button>
-            <button class="secondary" data-action="unsubscribe">Switch off</button>
+            <button class="secondary" data-action="syncold">Sync old</button>
         </div>
     </div>
 
@@ -153,16 +175,6 @@ render_header($loc['name'] . ' · Sync', 'locations');
                             $('#workstation').value = list.join(', ');
                         });
                     });
-                } else if (action === 'subscribe') {
-                    params.workstation = $('#workstation').value;
-                    params.seconds = $('#seconds').value;
-                    setProgress('Switching on…');
-                    const r = await call(params);
-                    setProgress(r.message);
-                } else if (action === 'unsubscribe') {
-                    setProgress('Switching off…');
-                    const r = await call(params);
-                    setProgress(r.message);
                 } else if (action === 'subscriptions') {
                     setProgress('Loading…');
                     const r = await call(params);
@@ -173,6 +185,28 @@ render_header($loc['name'] . ' · Sync', 'locations');
                     })));
                     const ours = r.subscriptions.filter(x => x.ours).length;
                     setProgress(ours ? 'Automatic sync is ON (' + ours + ' subscriptions).' : 'Automatic sync is OFF.');
+                    setSwitch(ours > 0);
+                } else if (action === 'syncold') {
+                    const from = fmtDate(addDays(new Date(), -30));
+                    const to = fmtDate(addDays(new Date(), 365));
+
+                    setProgress('Sync old: checking patients…');
+                    let start = 0;
+                    while (start !== null) {
+                        const r = await call({ action: 'patients', start });
+                        addLog(r.log);
+                        start = r.next;
+                    }
+
+                    setProgress('Sync old: checking appointments from ' + from + ' to ' + to + '…');
+                    start = 0;
+                    while (start !== null) {
+                        const r = await call({ action: 'appointments', dateStart: from, dateEnd: to, start });
+                        addLog(r.log);
+                        start = r.next;
+                    }
+
+                    setProgress('Sync old finished: patients and appointments (' + from + ' → ' + to + ') checked; anything missing in GHL was created or updated.');
                 } else if (action === 'log') {
                     setProgress('Loading…');
                     const r = await call(params);
@@ -210,10 +244,67 @@ render_header($loc['name'] . ' · Sync', 'locations');
             const newest = new Date(withBeat[0].heartbeat.replace(' ', 'T')).getTime();
             const active = withBeat.filter(c => newest - new Date(c.heartbeat.replace(' ', 'T')).getTime() < 24 * 3600 * 1000);
             $('#workstation').value = active.map(c => c.name).join(', ');
-            setProgress(active.length + ' computers active in the last 24 hours filled in. Now click "Switch on".');
+            setProgress(active.length + ' computers active in the last 24 hours filled in. Now use the Auto sync switch.');
         });
 
         document.querySelectorAll('button[data-action]').forEach(b =>
             b.addEventListener('click', () => run(b.dataset.action)));
+
+        // ---------------- Auto sync switch ----------------
+        function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+        function fmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+        const toggle = $('#autoSyncToggle');
+        const stateLabel = $('#autoSyncState');
+
+        function setSwitch(on) {
+            toggle.checked = on;
+            stateLabel.textContent = on ? 'On' : 'Off';
+            stateLabel.className = 'switchstate ' + (on ? 'on' : 'off');
+        }
+
+        toggle.addEventListener('change', async () => {
+            if (busy) { toggle.checked = !toggle.checked; return; }
+            const turningOn = toggle.checked;
+
+            if (turningOn && !$('#workstation').value.trim()) {
+                setSwitch(false);
+                setProgress('Enter at least one workstation first (or click "Find practice computers").', true);
+                return;
+            }
+
+            busy = true;
+            toggle.disabled = true;
+            document.querySelectorAll('button').forEach(b => b.disabled = true);
+
+            try {
+                if (turningOn) {
+                    setProgress('Switching on…');
+                    const r = await call({ action: 'subscribe', workstation: $('#workstation').value, seconds: $('#seconds').value });
+                    setProgress(r.message);
+                    setSwitch(true);
+                } else {
+                    setProgress('Switching off…');
+                    const r = await call({ action: 'unsubscribe' });
+                    setProgress(r.message);
+                    setSwitch(false);
+                }
+            } catch (e) {
+                setProgress(e.message, true);
+                setSwitch(!turningOn); // revert
+            } finally {
+                busy = false;
+                toggle.disabled = false;
+                document.querySelectorAll('button').forEach(b => b.disabled = false);
+            }
+        });
+
+        // Load the real on/off state quietly when the page opens
+        (async () => {
+            try {
+                const r = await call({ action: 'subscriptions' });
+                setSwitch(r.subscriptions.filter(x => x.ours).length > 0);
+            } catch (e) { /* leave as Off if this fails */ }
+        })();
     </script>
 <?php render_footer();
