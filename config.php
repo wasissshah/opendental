@@ -5,9 +5,9 @@
 
 // ---------------- Database (hPanel > Databases > MySQL Databases) ----------------
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'u123456789_portal');   // your database name
-define('DB_USER', 'u123456789_portal');   // your database user
-define('DB_PASS', 'PASTE_DB_PASSWORD');
+define('DB_NAME', 'u937090168_speedadsai');   // your database name
+define('DB_USER', 'u937090168_speedadsai');   // your database user
+define('DB_PASS', 'u937090168_Speedadsai');
 
 // ---------------- Security ----------------
 // Encryption key for API keys stored in the database. 64 hex characters.
