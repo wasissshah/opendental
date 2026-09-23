@@ -21,7 +21,7 @@ define('GHL_LOCATION_ID', 'VuqwtrNXGZ2nRYITMjn6');
  
 // Calendar that Open Dental appointments go into.
 // Open sync.html and click "List GHL calendars" to find the ID.
-define('GHL_CALENDAR_ID', 'IVGLhL7dm29tjfiXuCHw');
+define('GHL_CALENDAR_ID', 'lVGLhL7dm29tjfiXuCHw');
 
 // Optional: GHL user ID the appointments are assigned to.
 // Leave empty to use the calendar's owner automatically.
