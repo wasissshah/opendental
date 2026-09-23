@@ -26,9 +26,9 @@ define('APP_NAME', 'Admin Portal');
 define('MAIL_DRIVER', 'smtp');
 define('SMTP_HOST', 'smtp.hostinger.com');
 define('SMTP_PORT', 465);                        // 465 = SSL
-define('SMTP_USER', 'no-reply@speedadsai.com');  // the mailbox
-define('SMTP_PASS', 'PASTE_MAILBOX_PASSWORD');
-define('MAIL_FROM', 'no-reply@speedadsai.com');
+define('SMTP_USER', 'info@speedadsai.com');  // the mailbox
+define('SMTP_PASS', '#123456789#Hostinger');
+define('MAIL_FROM', 'info@speedadsai.com');
 define('MAIL_FROM_NAME', 'Admin Portal');
 
 // ---------------- Sync defaults (all locations) ----------------
