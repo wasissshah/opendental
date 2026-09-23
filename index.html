@@ -2,116 +2,275 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Open Dental Appointments</title>
+  <title>Open Dental Data Viewer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <link rel="stylesheet" href="https://cdn.datatables.net/2.1.8/css/dataTables.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/3.1.2/css/buttons.dataTables.min.css">
 
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f7f9; color: #222; }
-    h1 { font-size: 22px; margin-bottom: 16px; }
-    .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-    .filters { display: flex; gap: 12px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
-    .filters label { display: flex; flex-direction: column; font-size: 13px; gap: 4px; }
-    .filters input { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 7px 16px; background: #155a7c; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #0f4560; }
-    #status { font-size: 13px; color: #666; margin-left: 8px; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 24px; background: #f4f6f8; color: #222; }
+    h1 { font-size: 22px; margin: 0 0 16px; }
+    .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 16px; }
+
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .tab { padding: 8px 14px; border: 1px solid #cfd8dc; background: #fff; border-radius: 20px; cursor: pointer; font-size: 13px; }
+    .tab.active { background: #155a7c; border-color: #155a7c; color: #fff; }
+
+    .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    .filters label { display: flex; flex-direction: column; font-size: 12px; color: #555; gap: 4px; }
+    .filters input, .filters select { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; min-width: 140px; }
+    .hint { font-size: 12px; color: #777; margin-top: 10px; }
+
+    button.primary { padding: 8px 18px; background: #155a7c; color: #fff; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    button.primary:hover { background: #0f4560; }
+    button.link { background: none; border: 0; color: #155a7c; cursor: pointer; font-size: 13px; padding: 8px 4px; }
+
+    #status { font-size: 13px; color: #666; margin-left: 4px; }
     #status.error { color: #c0392b; }
-    table.dataTable td { font-size: 13px; }
+    table.dataTable td { font-size: 13px; white-space: nowrap; }
+    .table-wrap { overflow-x: auto; }
   </style>
 </head>
 <body>
 
-  <h1>Open Dental – Appointments</h1>
+  <h1>Open Dental – Data Viewer</h1>
 
   <div class="card">
-    <div class="filters">
-      <label>From
-        <input type="date" id="dateStart">
-      </label>
-      <label>To
-        <input type="date" id="dateEnd">
-      </label>
-      <button id="loadBtn">Load</button>
+    <div class="tabs" id="tabs"></div>
+
+    <div class="filters" id="filters"></div>
+
+    <div style="margin-top:14px; display:flex; align-items:center; gap:8px;">
+      <button class="primary" id="loadBtn">Load</button>
+      <button class="link" id="clearBtn">Clear filters</button>
       <span id="status"></span>
     </div>
+    <div class="hint" id="hint"></div>
+  </div>
 
-    <table id="apptTable" class="display" style="width:100%">
-      <thead>
-        <tr>
-          <th>Apt #</th>
-          <th>Pat #</th>
-          <th>Date / Time</th>
-          <th>Status</th>
-          <th>Procedures</th>
-          <th>Op</th>
-          <th>Prov</th>
-          <th>New Patient</th>
-          <th>Note</th>
-        </tr>
-      </thead>
-    </table>
+  <div class="card table-wrap">
+    <table id="dataTable" class="display" style="width:100%"></table>
   </div>
 
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/3.1.2/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/3.1.2/js/buttons.html5.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/3.1.2/js/buttons.colVis.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <script>
-    let table;
+    // ---------- What can be fetched, and the filters for each ----------
+    const APT_STATUS = ['', 'Scheduled', 'Complete', 'UnschedList', 'ASAP', 'Broken', 'Planned', 'PtNote', 'PtNoteCompleted'];
+    const PAT_STATUS = ['', 'Patient', 'NonPatient', 'Inactive', 'Archived', 'Deceased', 'Prospective'];
+    const GENDER     = ['', 'Male', 'Female', 'Unknown', 'Other'];
 
-    function apiUrl() {
-      const params = new URLSearchParams();
-      const s = $('#dateStart').val();
-      const e = $('#dateEnd').val();
-      if (s) params.append('dateStart', s);
-      if (e) params.append('dateEnd', e);
-      return 'api.php' + (params.toString() ? '?' + params.toString() : '');
-    }
-
-    function loadTable() {
-      $('#status').removeClass('error').text('Loading from Open Dental…');
-
-      if (table) {
-        table.ajax.url(apiUrl()).load(done);
-        return;
-      }
-
-      table = new DataTable('#apptTable', {
-        ajax: {
-          url: apiUrl(),
-          dataSrc: 'data',
-          error: function (xhr) {
-            let msg = 'Request failed';
-            try { msg = JSON.parse(xhr.responseText).error; } catch (e) {}
-            $('#status').addClass('error').text(msg);
-          }
-        },
-        columns: [
-          { data: 'AptNum' },
-          { data: 'PatNum' },
-          { data: 'AptDateTime' },
-          { data: 'AptStatus' },
-          { data: 'ProcDescript' },
-          { data: 'Op' },
-          { data: 'ProvNum' },
-          { data: 'IsNewPatient' },
-          { data: 'Note', defaultContent: '' }
+    const RESOURCES = {
+      appointments: {
+        label: 'Appointments',
+        hint: 'Leave dates empty to get all appointments (can be slow). Use a date range for faster results.',
+        filters: [
+          { name: 'dateStart', label: 'From', type: 'date' },
+          { name: 'dateEnd',   label: 'To',   type: 'date' },
+          { name: 'date',      label: 'Single day', type: 'date' },
+          { name: 'AptStatus', label: 'Status', type: 'select', options: APT_STATUS },
+          { name: 'PatNum',    label: 'Patient #', type: 'number' },
+          { name: 'Op',        label: 'Operatory #', type: 'number' },
+          { name: 'ClinicNum', label: 'Clinic #', type: 'number' },
+          { name: 'AppointmentTypeNum', label: 'Appt Type #', type: 'number' }
         ],
-        order: [[2, 'desc']],
-        pageLength: 25,
-        deferRender: true,
-        initComplete: done
+        show: ['AptNum', 'PatNum', 'AptDateTime', 'AptStatus', 'confirmed', 'ProcDescript', 'Op', 'provAbbr', 'IsNewPatient', 'IsHygiene', 'Priority', 'Note']
+      },
+      slots: {
+        label: 'Open Slots',
+        hint: 'Dates must be today or later. Default is the next 14 days. Usually pick a Provider # and Operatory #.',
+        filters: [
+          { name: 'dateStart', label: 'From', type: 'date' },
+          { name: 'dateEnd',   label: 'To',   type: 'date' },
+          { name: 'date',      label: 'Single day', type: 'date' },
+          { name: 'lengthMinutes', label: 'Min length (minutes)', type: 'number' },
+          { name: 'ProvNum',   label: 'Provider #', type: 'number' },
+          { name: 'OpNum',     label: 'Operatory #', type: 'number' }
+        ],
+        show: null
+      },
+      asap: {
+        label: 'ASAP List',
+        hint: 'Clinic # is required only if the practice uses clinics.',
+        filters: [
+          { name: 'ClinicNum', label: 'Clinic #', type: 'number' },
+          { name: 'ProvNum',   label: 'Provider #', type: 'number' }
+        ],
+        show: ['AptNum', 'PatNum', 'AptDateTime', 'AptStatus', 'ProcDescript', 'Op', 'provAbbr', 'Priority', 'Note']
+      },
+      patients: {
+        label: 'Patients',
+        hint: 'Name filters match partially and ignore case.',
+        filters: [
+          { name: 'LName',     label: 'Last name', type: 'text' },
+          { name: 'FName',     label: 'First name', type: 'text' },
+          { name: 'PatStatus', label: 'Status', type: 'select', options: PAT_STATUS },
+          { name: 'Gender',    label: 'Gender', type: 'select', options: GENDER },
+          { name: 'Birthdate', label: 'Birthdate', type: 'date' },
+          { name: 'PriProv',   label: 'Primary provider #', type: 'number' },
+          { name: 'ClinicNum', label: 'Clinic #', type: 'number' }
+        ],
+        show: ['PatNum', 'LName', 'FName', 'PatStatus', 'Gender', 'Birthdate', 'WirelessPhone', 'HmPhone', 'Email', 'City', 'priProvAbbr', 'EstBalance', 'DateFirstVisit']
+      },
+      providers: {
+        label: 'Providers',
+        hint: 'Use these numbers in the Provider # filters.',
+        filters: [ { name: 'ClinicNum', label: 'Clinic #', type: 'number' } ],
+        show: null
+      },
+      operatories: {
+        label: 'Operatories',
+        hint: 'Use these numbers in the Operatory # filters.',
+        filters: [ { name: 'ClinicNum', label: 'Clinic #', type: 'number' } ],
+        show: null
+      },
+      clinics: {
+        label: 'Clinics',
+        hint: 'Empty if the practice does not use clinics.',
+        filters: [],
+        show: null
+      },
+      appointmenttypes: {
+        label: 'Appointment Types',
+        hint: '',
+        filters: [],
+        show: null
+      }
+    };
+
+    let current = 'appointments';
+    let table = null;
+
+    // ---------- Build tabs and filter inputs ----------
+    function renderTabs() {
+      const $tabs = $('#tabs').empty();
+      Object.entries(RESOURCES).forEach(([key, r]) => {
+        $('<button class="tab">')
+          .text(r.label)
+          .toggleClass('active', key === current)
+          .on('click', () => { current = key; renderTabs(); renderFilters(); loadData(); })
+          .appendTo($tabs);
       });
     }
 
-    function done() {
-      const count = table ? table.data().count() : 0;
-      $('#status').text(count + ' appointments loaded');
+    function renderFilters() {
+      const r = RESOURCES[current];
+      const $f = $('#filters').empty();
+
+      if (!r.filters.length) {
+        $f.append('<span style="font-size:13px;color:#777">No filters for this data.</span>');
+      }
+
+      r.filters.forEach(f => {
+        const $label = $('<label>').text(f.label);
+        let $input;
+        if (f.type === 'select') {
+          $input = $('<select>');
+          f.options.forEach(o => $input.append($('<option>').val(o).text(o || 'All')));
+        } else {
+          $input = $('<input>').attr('type', f.type);
+        }
+        $input.attr('data-name', f.name);
+        $label.append($input);
+        $f.append($label);
+      });
+
+      $('#hint').text(r.hint || '');
     }
 
-    $('#loadBtn').on('click', loadTable);
-    $(loadTable);
+    function collectFilters() {
+      const params = new URLSearchParams({ resource: current });
+      $('#filters [data-name]').each(function () {
+        const v = $(this).val();
+        if (v !== '' && v !== null) params.append($(this).data('name'), v);
+      });
+      return params.toString();
+    }
+
+    // ---------- Formatting ----------
+    function formatCell(value) {
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'string' && value.startsWith('0001-01-01')) return '';
+      if (typeof value === 'object') return JSON.stringify(value);
+      return value;
+    }
+
+    // ---------- Load data and (re)build the table ----------
+    function loadData() {
+      const r = RESOURCES[current];
+      $('#status').removeClass('error').text('Loading ' + r.label.toLowerCase() + '…');
+      $('#loadBtn').prop('disabled', true);
+
+      $.getJSON('api.php?' + collectFilters())
+        .done(res => buildTable(res.data || []))
+        .fail(xhr => {
+          let msg = 'Request failed';
+          try { msg = JSON.parse(xhr.responseText).error; } catch (e) {}
+          $('#status').addClass('error').text(msg);
+          buildTable([]);
+        })
+        .always(() => $('#loadBtn').prop('disabled', false));
+    }
+
+    function buildTable(rows) {
+      const r = RESOURCES[current];
+
+      if (table) {
+        table.destroy();
+        $('#dataTable').empty();
+        table = null;
+      }
+
+      // Columns come from the data itself, so every field is available
+      const keys = rows.length ? Object.keys(rows[0]) : (r.show || ['No data']);
+      const columns = keys.map(k => ({
+        data: k,
+        title: k,
+        defaultContent: '',
+        visible: !r.show || r.show.includes(k),
+        render: (d, type) => type === 'display' ? $('<div>').text(formatCell(d)).html() : formatCell(d)
+      }));
+
+      table = new DataTable('#dataTable', {
+        data: rows,
+        columns: columns,
+        pageLength: 25,
+        lengthMenu: [10, 25, 50, 100, 500],
+        deferRender: true,
+        order: [],
+        layout: {
+          topStart: ['pageLength', {
+            buttons: [
+              { extend: 'colvis', text: 'Columns' },
+              { extend: 'csv',   title: 'opendental-' + current, exportOptions: { columns: ':visible' } },
+              { extend: 'excel', title: 'opendental-' + current, exportOptions: { columns: ':visible' } }
+            ]
+          }]
+        }
+      });
+
+      if (!$('#status').hasClass('error')) {
+        $('#status').text(rows.length + ' ' + r.label.toLowerCase() + ' loaded');
+      }
+    }
+
+    // ---------- Events ----------
+    $('#loadBtn').on('click', loadData);
+    $('#clearBtn').on('click', () => $('#filters [data-name]').val(''));
+    $('#filters').on('keydown', 'input', e => { if (e.key === 'Enter') loadData(); });
+
+    $(function () {
+      renderTabs();
+      renderFilters();
+      loadData();
+    });
   </script>
 </body>
 </html>

@@ -8,3 +8,7 @@ define('OD_DEVELOPER_KEY', '5MINUkGjsqKg5MiJ');
 
 // Customer Key: Developer Portal > Customer Keys (the Arvada Implants key)
 define('OD_CUSTOMER_KEY', 'pdoxOoT8CcsGi4Kd');
+
+
+define('OD_CA_FILE', '');
+ 
