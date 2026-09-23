@@ -325,6 +325,18 @@ function webhook_url() {
 
 const WATCH_TABLES = ['Appointment', 'AppointmentDeleted', 'Patient'];
 
+// Computers at the practice that run Open Dental, most recently active first
+function action_computers() {
+    $list = (array)od_send('GET', 'computers');
+    usort($list, fn($a, $b) => strcmp($b['LastHeartBeat'] ?? '', $a['LastHeartBeat'] ?? ''));
+    $out = [];
+    foreach ($list as $c) {
+        $hb = $c['LastHeartBeat'] ?? '';
+        $out[] = ['name' => $c['CompName'] ?? '', 'lastSeen' => strpos($hb, '0001-01-01') === 0 ? 'never / unknown' : $hb];
+    }
+    return ['computers' => $out];
+}
+
 function action_subscriptions() {
     $subs = od_send('GET', 'subscriptions');
     $out = [];
@@ -497,6 +509,7 @@ try {
         case 'calendars':    $out = action_calendars(); break;
         case 'checkcal':     $out = action_checkcal(); break;
         case 'subscriptions':$out = action_subscriptions(); break;
+        case 'computers':    $out = action_computers(); break;
         case 'subscribe':    $out = action_subscribe(); break;
         case 'unsubscribe':  $out = action_unsubscribe(); break;
         case 'webhooklog':   $out = action_webhooklog(); break;
