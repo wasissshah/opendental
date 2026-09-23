@@ -90,6 +90,25 @@ function od_get($endpoint, $params = []) {
     return array_keys($json) === range(0, count($json) - 1) ? $json : [$json];
 }
 
+function fetch_all($res, $params) {
+    if (!$res['paged']) {
+        return od_get($res['endpoint'], $params);
+    }
+    // Open Dental returns up to 100 rows per call; keep going with Offset
+    $all      = [];
+    $pageSize = 100;
+    $offset   = 0;
+    $maxLoops = 300; // safety limit (30,000 rows)
+    while ($maxLoops-- > 0) {
+        $params['Offset'] = $offset;
+        $page = od_get($res['endpoint'], $params);
+        $all  = array_merge($all, $page);
+        if (count($page) < $pageSize) break;
+        $offset += count($page);
+    }
+    return $all;
+}
+
 try {
     $key = $_GET['resource'] ?? 'appointments';
     if (!isset($RESOURCES[$key])) {
@@ -105,21 +124,28 @@ try {
         }
     }
 
-    $all = [];
-    if ($res['paged']) {
-        // Open Dental returns up to 100 rows per call; keep going with Offset
-        $pageSize = 100;
-        $offset   = 0;
-        $maxLoops = 300; // safety limit (30,000 rows)
-        while ($maxLoops-- > 0) {
-            $params['Offset'] = $offset;
-            $page = od_get($res['endpoint'], $params);
-            $all  = array_merge($all, $page);
-            if (count($page) < $pageSize) break;
-            $offset += count($page);
+    // Cancellation filter (appointments only).
+    // In Open Dental a cancelled appointment is "Broken". If it was sent to the
+    // Unscheduled List when it was broken, its status becomes "UnschedList".
+    $CANCEL_MAP = [
+        'cancelled'   => ['Broken', 'UnschedList'],
+        'broken'      => ['Broken'],
+        'unscheduled' => ['UnschedList'],
+        'active'      => ['Scheduled', 'Complete'],
+        'upcoming'    => ['Scheduled'],
+    ];
+
+    $cancel = $_GET['cancelFilter'] ?? '';
+    if ($key === 'appointments' && isset($CANCEL_MAP[$cancel])) {
+        // The API accepts one AptStatus per call, so fetch each and combine
+        $all = [];
+        foreach ($CANCEL_MAP[$cancel] as $status) {
+            $p = $params;
+            $p['AptStatus'] = $status;
+            $all = array_merge($all, fetch_all($res, $p));
         }
     } else {
-        $all = od_get($res['endpoint'], $params);
+        $all = fetch_all($res, $params);
     }
 
     echo json_encode(['data' => $all]);

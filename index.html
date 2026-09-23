@@ -31,6 +31,12 @@
     #status.error { color: #c0392b; }
     table.dataTable td { font-size: 13px; white-space: nowrap; }
     .table-wrap { overflow-x: auto; }
+    table.dataTable tbody tr.row-cancelled > td { background: #fdecea !important; color: #9b2c2c; }
+    table.dataTable tbody tr.row-complete > td { background: #eef8f0 !important; }
+    .legend { font-size: 12px; color: #555; margin-top: 8px; display: flex; gap: 14px; }
+    .legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; vertical-align: middle; }
+    .legend .l-cancel::before { background: #f5b7b1; }
+    .legend .l-complete::before { background: #b9e2c2; }
   </style>
 </head>
 <body>
@@ -48,6 +54,7 @@
       <span id="status"></span>
     </div>
     <div class="hint" id="hint"></div>
+    <div class="legend"><span class="l-cancel">Cancelled</span><span class="l-complete">Completed</span></div>
   </div>
 
   <div class="card table-wrap">
@@ -66,22 +73,43 @@
     const APT_STATUS = ['', 'Scheduled', 'Complete', 'UnschedList', 'ASAP', 'Broken', 'Planned', 'PtNote', 'PtNoteCompleted'];
     const PAT_STATUS = ['', 'Patient', 'NonPatient', 'Inactive', 'Archived', 'Deceased', 'Prospective'];
     const GENDER     = ['', 'Male', 'Female', 'Unknown', 'Other'];
+    const CANCEL_FILTER = [
+      { value: '',            label: 'All appointments' },
+      { value: 'cancelled',   label: 'Cancelled (all)' },
+      { value: 'broken',      label: 'Cancelled – still on schedule (Broken)' },
+      { value: 'unscheduled', label: 'Cancelled – moved to Unscheduled List' },
+      { value: 'active',      label: 'Not cancelled (Scheduled + Complete)' },
+      { value: 'upcoming',    label: 'Scheduled only' }
+    ];
+
+    // Readable cancellation status for each appointment
+    function cancelStatus(apt) {
+      switch (apt.AptStatus) {
+        case 'Broken':      return 'Cancelled';
+        case 'UnschedList': return 'Cancelled – unscheduled';
+        case 'Scheduled':   return 'Scheduled';
+        case 'Complete':    return 'Completed';
+        case 'Planned':     return 'Planned';
+        default:            return apt.AptStatus || '';
+      }
+    }
 
     const RESOURCES = {
       appointments: {
         label: 'Appointments',
-        hint: 'Leave dates empty to get all appointments (can be slow). Use a date range for faster results.',
+        hint: 'Leave dates empty to get all appointments (can be slow). Cancellation filter overrides the Status filter. In Open Dental, cancelled appointments are marked "Broken".',
         filters: [
           { name: 'dateStart', label: 'From', type: 'date' },
           { name: 'dateEnd',   label: 'To',   type: 'date' },
           { name: 'date',      label: 'Single day', type: 'date' },
+          { name: 'cancelFilter', label: 'Cancellation', type: 'select', options: CANCEL_FILTER },
           { name: 'AptStatus', label: 'Status', type: 'select', options: APT_STATUS },
           { name: 'PatNum',    label: 'Patient #', type: 'number' },
           { name: 'Op',        label: 'Operatory #', type: 'number' },
           { name: 'ClinicNum', label: 'Clinic #', type: 'number' },
           { name: 'AppointmentTypeNum', label: 'Appt Type #', type: 'number' }
         ],
-        show: ['AptNum', 'PatNum', 'AptDateTime', 'AptStatus', 'confirmed', 'ProcDescript', 'Op', 'provAbbr', 'IsNewPatient', 'IsHygiene', 'Priority', 'Note']
+        show: ['AptNum', 'PatNum', 'AptDateTime', 'CancelStatus', 'AptStatus', 'confirmed', 'unschedStatus', 'ProcDescript', 'Op', 'provAbbr', 'IsNewPatient', 'Priority', 'DateTStamp', 'Note']
       },
       slots: {
         label: 'Open Slots',
@@ -173,7 +201,11 @@
         let $input;
         if (f.type === 'select') {
           $input = $('<select>');
-          f.options.forEach(o => $input.append($('<option>').val(o).text(o || 'All')));
+          f.options.forEach(o => {
+            const val = typeof o === 'object' ? o.value : o;
+            const txt = typeof o === 'object' ? o.label : (o || 'All');
+            $input.append($('<option>').val(val).text(txt));
+          });
         } else {
           $input = $('<input>').attr('type', f.type);
         }
@@ -228,6 +260,14 @@
         table = null;
       }
 
+      // Add a readable cancellation column to appointment data
+      const isAppt = current === 'appointments' || current === 'asap';
+      if (isAppt) {
+        rows.forEach(a => { a.CancelStatus = cancelStatus(a); });
+        // Newest first
+        rows.sort((a, b) => (b.AptDateTime || '').localeCompare(a.AptDateTime || ''));
+      }
+
       // Columns come from the data itself, so every field is available
       const keys = rows.length ? Object.keys(rows[0]) : (r.show || ['No data']);
       const columns = keys.map(k => ({
@@ -245,6 +285,13 @@
         lengthMenu: [10, 25, 50, 100, 500],
         deferRender: true,
         order: [],
+        createdRow: function (row, data) {
+          if (data.AptStatus === 'Broken' || data.AptStatus === 'UnschedList') {
+            $(row).addClass('row-cancelled');
+          } else if (data.AptStatus === 'Complete') {
+            $(row).addClass('row-complete');
+          }
+        },
         layout: {
           topStart: ['pageLength', {
             buttons: [
