@@ -24,7 +24,7 @@ define('APP_NAME', 'Admin Portal');
 // 'smtp' = send through a Hostinger mailbox (recommended; create one in hPanel > Emails)
 // 'mail' = PHP mail() (works on Hostinger, but more likely to land in spam)
 define('MAIL_DRIVER', 'smtp');
-define('SMTP_HOST', 'smtp.hostinger.com');
+define('SMTP_HOST', 'mail.hostinger.com');
 define('SMTP_PORT', 465);                        // 465 = SSL
 define('SMTP_USER', 'info@speedadsai.com');  // the mailbox
 define('SMTP_PASS', '#123456789#Hostinger');
